@@ -7,16 +7,17 @@ from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
 from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
+from kalshi_live import LiveTicker, overlay_market_data
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
 st.title('Kalshi Tennis Scanner')
-st.caption('Independent project · not affiliated with Kalshi · read-only public market data · polling, not tick-by-tick · no live tennis score feed')
+st.caption('Independent project · not affiliated with Kalshi · read-only public market data · live ticker streaming when configured · no live tennis score feed')
 
 with st.sidebar:
     st.header('Scanner controls')
     tours = st.multiselect('Match-winner series', list(SERIES), default=['ATP','WTA','ATP Challenger','WTA Challenger','ITF'])
-    st.caption('Market data refreshes automatically every 60 seconds while this dashboard is open.')
+    st.caption('Live market updates when the Kalshi WebSocket is connected. REST listings reconcile every 60 seconds.')
     max_spread = st.slider('Maximum YES spread (¢)', 1, 50, 20)
     min_volume = st.number_input('Minimum 24h contracts traded', min_value=0, value=0, step=25)
     st.info('Prices are quotes, not guarantees of fill. No trades are submitted.')
@@ -25,20 +26,49 @@ with st.sidebar:
 if not tours:
     st.warning('Select at least one series.'); st.stop()
 
-interval = '60s'  # Refresh live market data every minute while the page is open.
+interval = '2s'  # Keep the browser view close to the streaming market state.
 
 @st.cache_data(ttl=600, show_spinner=False)
 def cached_event_metadata(selected_tours):
     return fetch_event_metadata(selected_tours)
 
+@st.cache_data(ttl=60, show_spinner=False)
+def cached_market_scan(selected_tours):
+    # REST is used for initial snapshots and discovery of new tennis markets.
+    return scan(list(selected_tours))
+
+@st.cache_resource(show_spinner=False)
+def live_stream(api_key_id, private_key_pem):
+    return LiveTicker(api_key_id, private_key_pem)
+
+# Kalshi requires API-key authorization for its WebSocket handshake.
+# Secrets must only be entered in Streamlit Cloud's private Secrets manager.
+try:
+    _live_key_id = st.secrets.get('KALSHI_API_KEY_ID')
+    _live_key_pem = st.secrets.get('KALSHI_PRIVATE_KEY_PEM')
+except Exception:
+    _live_key_id = _live_key_pem = None
+_feed = live_stream(_live_key_id, _live_key_pem) if _live_key_id and _live_key_pem else None
 
 @st.fragment(run_every=interval)
 def dashboard():
     if st.button('Refresh now', type='primary'):
-        pass
+        cached_market_scan.clear()
     started = datetime.now(timezone.utc)
     with st.spinner('Fetching open markets from Kalshi…'):
-        rows, errors = scan(tours)
+        rows, errors = cached_market_scan(tuple(tours))
+    if _feed:
+        live_data, last_live, stream_status, stream_error = _feed.snapshot()
+        rows, updated_count = overlay_market_data(rows, live_data, last_live)
+        if last_live and updated_count:
+            lag_seconds = max(0, int(__import__('time').time() - last_live))
+            st.caption(f'Live Kalshi ticker feed · latest tennis message {lag_seconds}s ago · {updated_count} markets updated')
+        else:
+            st.caption(f'Kalshi WebSocket: {stream_status} · REST baseline refreshes every 60s')
+        if stream_status in ('error', 'reconnecting') and stream_error:
+            st.caption('Live connection unavailable; showing REST snapshot while reconnecting.')
+    else:
+        st.caption('REST updates every 60s. For live Kalshi streaming, add a market-data API key to Streamlit secrets.')
     if errors:
         st.warning('Some requests failed: ' + ' | '.join(errors))
     market_controls = st.container()
@@ -53,6 +83,7 @@ def dashboard():
         with market_controls:
             st.info('No open tennis markets returned. This can happen between tournaments, or if the API is unavailable. Try different series or refresh later.')
         return
+    # Persist the REST/streaming market snapshot. Streaming updates are read-only.
     # Preserve snapshots even when active display filters hide the rows.
     try:
         save_snapshots(rows)
@@ -73,7 +104,7 @@ def dashboard():
         # Notional $ amounts represent $1 settlement face value per contract.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('Total match volume since opening (Kalshi volume_fp). Whole-dollar $1-per-contract notional; not actual cash paid. Refreshed every 60 seconds.')
+        st.caption('Total match volume (Kalshi volume_fp). Whole-dollar $1-per-contract notional. Live when authenticated WebSocket is connected; otherwise updated every 60s.')
         # Recreate the display options from the newly fetched volume on EVERY
         # 60-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
@@ -105,7 +136,7 @@ def dashboard():
             index=event_ids.index(previous_event),
             key='matchup_display_option',
             on_change=remember_match,
-            help='Cumulative volume from Kalshi volume_fp across distinct open contracts in this match, refreshed every 60 seconds. Displayed as whole-dollar settlement notional; N/A means missing data. Kalshi website totals may use different event accounting.',
+            help='Cumulative volume from Kalshi volume_fp across distinct open contracts in this match; live when the WebSocket is connected, otherwise every 60 seconds. Displayed as whole-dollar settlement notional; N/A means missing data. Kalshi website totals may use different event accounting.',
         )
         chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]
