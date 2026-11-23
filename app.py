@@ -4,6 +4,8 @@ import pandas as pd
 import streamlit as st
 from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
+from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
+import requests
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -34,11 +36,12 @@ def dashboard():
     if errors:
         st.warning('Some requests failed: ' + ' | '.join(errors))
     market_controls = st.container()
-    overview, watchlist, price_history, trade_value = st.tabs([
+    overview, watchlist, price_history, trade_value, data_explorer = st.tabs([
         'Market Overview',
         'Market Watchlist',
         'Price History',
         'Trade Value Analysis',
+        'Market Data Explorer',
     ])
     if not rows:
         with market_controls:
@@ -106,6 +109,99 @@ def dashboard():
                 st.warning('Positive model-based edge is hypothetical. Verify market settlement rules and actual fees before acting.')
         else:
             st.info('No usable quote for value comparison.')
+
+    with data_explorer:
+        st.subheader('Kalshi Market Data Explorer')
+        st.caption('Public Kalshi API data for the selected tennis contract. Quotes and trades are exchange data, not an independent tennis prediction. No account access or orders.')
+        st.write(f'**Selected market:** `{selected}`')
+        st.info('Use the buttons below to request detailed data on demand. This avoids fetching every order book on every dashboard refresh.')
+        depth = st.selectbox('Order-book levels per side', [5, 10, 20, 50, 100, 0], index=2,
+                             format_func=lambda x: 'All levels' if x == 0 else str(x))
+        details_col, book_col, trades_col, candles_col = st.columns(4)
+
+        if details_col.button('Load market details', key='load_market_details'):
+            try:
+                details = get_market(selected)
+                st.session_state['kalshi_market_details'] = {'ticker': selected, 'data': details}
+            except (requests.RequestException, ValueError) as exc:
+                st.error(f'Market details unavailable: {exc}')
+        if book_col.button('Load order book', key='load_order_book'):
+            try:
+                ladder = get_orderbook(selected, depth=depth)
+                st.session_state['kalshi_orderbook'] = {'ticker': selected, 'depth': depth, 'data': ladder}
+            except (requests.RequestException, ValueError) as exc:
+                st.error(f'Order book unavailable: {exc}')
+        if trades_col.button('Load recent trades', key='load_recent_trades'):
+            try:
+                trades = get_trades(selected)
+                st.session_state['kalshi_trades'] = {'ticker': selected, 'data': trades}
+            except (requests.RequestException, ValueError) as exc:
+                st.error(f'Recent trades unavailable: {exc}')
+
+        candle_col.caption('Historical candles below')
+        candle_period = st.selectbox('Candle interval', ['1 hour', '1 minute', '1 day'], index=0)
+        candle_days = st.slider('Historical window (days)', min_value=1, max_value=7, value=2)
+        period = {'1 minute': 1, '1 hour': 60, '1 day': 1440}[candle_period]
+        if st.button('Load historical candles', key='load_candles'):
+            try:
+                candles = get_candlesticks(selected, row['tour'], days=candle_days, period_minutes=period)
+                st.session_state['kalshi_candles'] = {'ticker': selected, 'period': period, 'days': candle_days, 'data': candles}
+            except (requests.RequestException, ValueError) as exc:
+                st.error(f'Candlesticks unavailable: {exc}')
+
+        st.markdown('#### Market information and settlement rules')
+        detail_record = st.session_state.get('kalshi_market_details', {})
+        if detail_record.get('ticker') == selected:
+            info = detail_record['data']
+            summary_keys = ['ticker', 'status', 'title', 'yes_sub_title', 'no_sub_title',
+                            'volume_fp', 'volume_24h_fp', 'open_interest_fp', 'liquidity_dollars',
+                            'open_time', 'close_time', 'settlement_ts', 'rules_primary', 'rules_secondary']
+            st.json({key: info.get(key) for key in summary_keys if key in info})
+            with st.expander('All returned market fields'):
+                st.json(info)
+        else:
+            st.caption('Select Load market details to view the available exchange metadata.')
+
+        st.markdown('#### Order-book depth')
+        book_record = st.session_state.get('kalshi_orderbook', {})
+        if book_record.get('ticker') == selected:
+            ladder_df = pd.DataFrame(orderbook_rows(book_record['data']))
+            if ladder_df.empty:
+                st.info('No active orders in the returned book.')
+            else:
+                st.dataframe(ladder_df, use_container_width=True, hide_index=True)
+            st.caption('Kalshi returns YES and NO bids; the opposite-side ask is inferred as 100¢ minus the bid, not a separate posted ask.')
+        else:
+            st.caption('Select Load order book to view current bids and size.')
+
+        st.markdown('#### Latest completed trades')
+        trade_record = st.session_state.get('kalshi_trades', {})
+        if trade_record.get('ticker') == selected:
+            trades_df = pd.DataFrame(trade_record['data'])
+            if trades_df.empty:
+                st.info('No trades returned for this contract.')
+            else:
+                st.dataframe(trades_df, use_container_width=True, hide_index=True)
+                st.download_button('Download recent trades CSV', trades_df.to_csv(index=False),
+                                   file_name=f'{selected}_trades.csv', mime='text/csv')
+        else:
+            st.caption('Select Load recent trades to inspect transaction prices, sizes and times.')
+
+        st.markdown('#### Kalshi historical candles')
+        candle_record = st.session_state.get('kalshi_candles', {})
+        if candle_record.get('ticker') == selected:
+            candles_df = pd.DataFrame(candle_rows(candle_record['data']))
+            if candles_df.empty:
+                st.info('No candle records returned for the selected timeframe.')
+            else:
+                candles_df['Time (UTC)'] = pd.to_datetime(candles_df['Time (UTC)'], utc=True)
+                plot = candles_df.set_index('Time (UTC)')
+                st.line_chart(plot[['YES bid close (¢)', 'YES ask close (¢)', 'Last traded close (¢)']],
+                              y_label='YES contract price (¢)')
+                st.dataframe(candles_df, use_container_width=True, hide_index=True)
+        else:
+            st.caption('Select Load historical candles to retrieve exchange historical prices.')
+        st.caption('For authenticated real-time WebSocket streams, portfolio data, and long-term archival storage, a separate service is required.')
 
 
 dashboard()
