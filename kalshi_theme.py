@@ -77,6 +77,22 @@ def apply_theme():
         outline-offset: 2px;
     }
 
+    /* Improve reading order and mobile-friendly control spacing. */
+    [data-testid="stMetric"] { min-height: 102px; }
+    [data-testid="stMetricLabel"] { color: #34594C; font-weight: 600; }
+    [data-testid="stSidebar"] .stMultiSelect,
+    [data-testid="stSidebar"] .stSlider,
+    [data-testid="stSidebar"] .stNumberInput { margin-bottom: .4rem; }
+    .stTabs [data-baseweb="tab"] { min-height: 42px; }
+    .stButton button, .stDownloadButton button {
+        border-radius: 9px;
+        font-weight: 600;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid #E0EAE3;
+        border-radius: 10px;
+    }
+
     /* Tables and charts keep their native Streamlit behavior. */
     [data-testid="stDataFrame"] {
         border: 1px solid #E0EAE3;
