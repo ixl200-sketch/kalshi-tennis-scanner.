@@ -8,6 +8,7 @@ from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, g
 import requests
 from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
 from kalshi_live import LiveTicker, overlay_market_data
+from volume_reconcile import get_event_snapshot, reconciliation_report, whole_dollars
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -312,6 +313,51 @@ def dashboard():
                 st.dataframe(candles_df, use_container_width=True, hide_index=True)
         else:
             st.caption('Select Load historical candles to retrieve exchange historical prices.')
+
+        st.divider()
+        with st.expander('Verify Kalshi volume against the exchange', expanded=False):
+            st.caption('Fetch a fresh, uncached Kalshi event snapshot and inspect cumulative volume for each outcome. The dropdown total is calculated by this app; this check does not assume Kalshi.com uses the same event formula.')
+            audit_event = st.text_input(
+                'Event ID to check',
+                value=chosen_event,
+                help='Defaults to the match you selected. You can also enter the historical Ono vs Jones event: KXATPCHALLENGERMATCH-26NOV22ONOJON.',
+                key='audit_event_id',
+            ).strip()
+            website_reference = st.number_input(
+                'Volume currently displayed on Kalshi.com (optional)',
+                min_value=0, value=0, step=1,
+                help='Enter the full number without a dollar sign. Compare values captured at approximately the same time; an old screenshot is not a live reference.',
+            )
+            if st.button('Fetch and compare volume', key='audit_volume_now'):
+                try:
+                    live_snapshot = get_event_snapshot(audit_event)
+                    st.session_state['volume_audit_result'] = reconciliation_report(
+                        live_snapshot, website_reference if website_reference > 0 else None
+                    )
+                except (requests.RequestException, ValueError, TypeError) as exc:
+                    st.error(f'Unable to retrieve event volume: {exc}')
+            audit = st.session_state.get('volume_audit_result')
+            if audit:
+                st.caption(f"API snapshot at {audit.get('retrieved_at', 'unknown')} · event {audit.get('event_ticker') or audit_event}")
+                x1, x2, x3 = st.columns(3)
+                x1.metric('Sum of contracts', whole_dollars(audit['sum']))
+                x2.metric('Largest single contract', whole_dollars(audit['largest']))
+                x3.metric('Kalshi event field', whole_dollars(audit['published_event_volume']))
+                st.caption('The event-volume field shows N/A when Kalshi did not return one. Sum and largest-contract values are calculations, not authoritative website totals.')
+                if audit['contracts']:
+                    st.dataframe(pd.DataFrame(audit['contracts']), hide_index=True, use_container_width=True)
+                else:
+                    st.warning('No child markets returned for this event. A historical event may require a different API path.')
+                if audit['reference'] is not None:
+                    st.metric('Website reference entered', whole_dollars(audit['reference']))
+                    if audit['difference'] is None:
+                        st.warning('Cannot compare: at least one contract volume is missing.')
+                    elif audit['matches_sum']:
+                        st.success('The summed API volumes match the website reference at the times sampled. This does not establish a universal calculation rule.')
+                    else:
+                        st.warning(f"Difference from sum: {whole_dollars(abs(audit['difference']))}. The website may use a different rule or the figures may be from different times.")
+                st.caption('For the November 23 Ono vs Jones screenshot, $1,034,701 is a historical reference; an API response today cannot verify the value at the screenshot time.')
+
         st.caption('For authenticated real-time WebSocket streams, portfolio data, and long-term archival storage, a separate service is required.')
 
 
