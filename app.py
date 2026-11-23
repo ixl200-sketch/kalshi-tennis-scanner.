@@ -138,7 +138,7 @@ def dashboard():
             except (requests.RequestException, ValueError) as exc:
                 st.error(f'Recent trades unavailable: {exc}')
 
-        candle_col.caption('Historical candles below')
+        candles_col.caption('Historical candles below')
         candle_period = st.selectbox('Candle interval', ['1 hour', '1 minute', '1 day'], index=0)
         candle_days = st.slider('Historical window (days)', min_value=1, max_value=7, value=2)
         period = {'1 minute': 1, '1 hour': 60, '1 day': 1440}[candle_period]
