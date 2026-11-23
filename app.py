@@ -6,7 +6,7 @@ from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -73,17 +73,13 @@ def dashboard():
         # This is $1 settlement notional, not the cash paid for trades.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('24h match volume: Kalshi-reported contract counts summed across distinct markets; $1 settlement notional, not actual cash traded.')
+        st.caption('24h match volume: sum of Kalshi-reported volumes across the displayed open contracts for each match; dollar amounts are $1-per-contract notional, not cash paid.')
         # Recreate the display options from the newly fetched volume on EVERY
         # 60-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
         event_ids = [event_id for event_id, _volume in ranked_events]
         option_by_event = {
-            event_id: (
-                f"{labels[event_id]} | ${event_volume[event_id]:,.0f}"
-                if event_volume[event_id] is not None
-                else f"{labels[event_id]} | N/A"
-            )
+            event_id: f"{labels[event_id]} | {format_notional_volume(event_volume[event_id])}"
             for event_id in event_ids
         }
         event_by_option = {label: event_id for event_id, label in option_by_event.items()}
