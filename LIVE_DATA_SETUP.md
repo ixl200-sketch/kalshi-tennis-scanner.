@@ -2,7 +2,7 @@
 
 The scanner uses the public REST API to discover open tennis markets every 60 seconds.
 When authorized, it also listens to the Kalshi **ticker** WebSocket channel
-for changes to `volume_fp`, displayed contract prices, and quotes. Streamlit redraws
+for exchange-reported **`dollar_volume`**, contract `volume_fp`, prices and quotes. Streamlit redraws
 the selected dashboard approximately every **2 seconds** while the app is open.
 
 ## Configure in Streamlit Community Cloud
@@ -21,10 +21,12 @@ your-private-key-data
 
 4. Save secrets and restart the app. Never commit a private key to GitHub,
    share it in chat, or place it in a public frontend.
-5. Look for the **Live Kalshi ticker feed** status in the dashboard.
+5. Look for the **Live feed connected** status in the dashboard. Open a match with
+   active trading; ticker messages only arrive for markets with changes.
 
 If secrets are absent or the WebSocket connection fails, the scanner falls
-back to a 60-second REST refresh, and explicitly reports that it is not live.
+back to a 60-second REST refresh for prices and contract volumes. The dropdown
+shows **N/A for dollar volume** rather than inventing an equivalent from contracts.
 
 ## What this does **not** guarantee
 
@@ -33,11 +35,14 @@ back to a 60-second REST refresh, and explicitly reports that it is not live.
   figures on Kalshi.com and Streamlit.
 * Streamlit's UI currently redraws about every 2 seconds, and browser sleep
   or connection interruption can delay it.
-* The dropdown computes match totals from the returned market-contract
-  `volume_fp` figures. Kalshi.com's website may use a different event
-  aggregation method. This implementation does **not** claim exact parity.
-* The `$1` per contract formatting is settlement notional, not execution
-  cash volume. No order placement or portfolio access exists.
+* The dropdown uses **`dollar_volume` directly from the WebSocket** for each distinct
+  market and sums those reported dollar figures across the event. We do NOT turn
+  `volume_fp` contract counts into dollars. The exact Kalshi.com match-page
+  event aggregation is not independently verified, so exact parity is NOT guaranteed.
+* When a contract has not emitted recent dollar-volume data, the whole event shows
+  **N/A** rather than a misleading estimate. Individual ticker updates are
+  scheduled by Kalshi approximately once a second when there are changes.
+* No order placement or portfolio access exists.
 * WebSocket connections are session/process dependent. For continuous 24/7
   collection, host a persistent worker or data service separately.
 
