@@ -76,6 +76,8 @@ def normalize(market, tour, timestamp=None):
         'last_c': dollars_to_cents(market.get('last_price_dollars')),
         'volume_24h': (number(market['volume_24h_fp'])
                        if market.get('volume_24h_fp') not in (None, '') else None),
+        'volume_total': (number(market['volume_fp'])
+                         if market.get('volume_fp') not in (None, '') else None),
         'open_interest': number(market.get('open_interest_fp')),
         'bid_size': number(market.get('yes_bid_size_fp')),
         'ask_size': number(market.get('yes_ask_size_fp')),
