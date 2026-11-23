@@ -78,6 +78,10 @@ def normalize(market, tour, timestamp=None):
                        if market.get('volume_24h_fp') not in (None, '') else None),
         'volume_total': (number(market['volume_fp'])
                          if market.get('volume_fp') not in (None, '') else None),
+        # Only use a REST dollar amount when Kalshi explicitly returns it.
+        # Never convert volume_fp contract counts into dollar estimates.
+        'exchange_dollar_volume': (number(market['dollar_volume'])
+                                   if market.get('dollar_volume') not in (None, '') else None),
         'open_interest': number(market.get('open_interest_fp')),
         'bid_size': number(market.get('yes_bid_size_fp')),
         'ask_size': number(market.get('yes_ask_size_fp')),
