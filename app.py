@@ -111,7 +111,7 @@ def dashboard():
         # Notional $ amounts represent $1 settlement face value per contract.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('Total match volume (Kalshi volume_fp). Whole-dollar $1-per-contract notional. Live when authenticated WebSocket is connected; otherwise updated every 60s.')
+        st.caption('Volume shown below is calculated from Kalshi contract data; it is NOT verified as the Kalshi.com match-page volume. Whole-dollar notional, refreshed when new data arrives.')
         # Recreate the display options from the newly fetched volume on EVERY
         # 60-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
@@ -143,7 +143,7 @@ def dashboard():
             index=event_ids.index(previous_event),
             key='matchup_display_option',
             on_change=remember_match,
-            help='Cumulative volume from Kalshi volume_fp across distinct open contracts in this match; live when the WebSocket is connected, otherwise every 60 seconds. Displayed as whole-dollar settlement notional; N/A means missing data. Kalshi website totals may use different event accounting.',
+            help='Calculated sum of distinct market volume_fp contract counts, not the authoritative website match volume. Values update from Kalshi data but may be higher than Kalshi.com. N/A means missing data.',
         )
         chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]
@@ -315,12 +315,13 @@ def dashboard():
             st.caption('Select Load historical candles to retrieve exchange historical prices.')
 
         st.divider()
+        st.caption('For the Huertas Del Pino vs. Schenekenberg example, Kalshi.com displayed **$662,768 vol** in the screenshot. The audit below checks the API components rather than treating an app sum as the published figure.')
         with st.expander('Verify Kalshi volume against the exchange', expanded=False):
             st.caption('Fetch a fresh, uncached Kalshi event snapshot and inspect cumulative volume for each outcome. The dropdown total is calculated by this app; this check does not assume Kalshi.com uses the same event formula.')
             audit_event = st.text_input(
                 'Event ID to check',
-                value=chosen_event,
-                help='Defaults to the match you selected. You can also enter the historical Ono vs Jones event: KXATPCHALLENGERMATCH-26NOV22ONOJON.',
+                value='KXATPCHALLENGERMATCH-26NOV23HUESCH' if chosen_event == 'KXATPCHALLENGERMATCH-26NOV23HUESCH' else chosen_event,
+                help='Use the match you selected, or enter the Huertas Del Pino vs Schenekenberg event KXATPCHALLENGERMATCH-26NOV23HUESCH.',
                 key='audit_event_id',
             ).strip()
             website_reference = st.number_input(
@@ -356,7 +357,7 @@ def dashboard():
                         st.success('The summed API volumes match the website reference at the times sampled. This does not establish a universal calculation rule.')
                     else:
                         st.warning(f"Difference from sum: {whole_dollars(abs(audit['difference']))}. The website may use a different rule or the figures may be from different times.")
-                st.caption('For the November 23 Ono vs Jones screenshot, $1,034,701 is a historical reference; an API response today cannot verify the value at the screenshot time.')
+                st.caption('The $662,768 screenshot is from November 23, 2026. A later live API snapshot cannot independently verify the earlier figure without timestamped volume history.')
 
         st.caption('For authenticated real-time WebSocket streams, portfolio data, and long-term archival storage, a separate service is required.')
 
