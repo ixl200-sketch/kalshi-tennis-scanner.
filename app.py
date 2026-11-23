@@ -74,10 +74,10 @@ def dashboard():
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
         chosen_event = st.selectbox(
-            '24h Volume | Tournament | Player 1 vs. Player 2',
+            'Tournament | Player 1 vs. Player 2 | 24h Notional Volume',
             [event_id for event_id, _volume in ranked_events],
-            format_func=lambda event_id: f"{event_volume[event_id]:,.0f} | {labels[event_id]}",
-            help='Highest 24-hour volume first. Volume uses the most active player contract per match; ticker IDs remain internal.',
+            format_func=lambda event_id: f"{labels[event_id]} | ${event_volume[event_id]:,.0f}",
+            help='Highest estimated 24-hour notional volume first: contracts × $1 face value per contract. This is NOT actual cash spent. The most active player contract is used per match; tickers remain internal.',
         )
         candidates = event_groups[chosen_event]
         if len(candidates) > 1:
