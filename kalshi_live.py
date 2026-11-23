@@ -161,3 +161,32 @@ def overlay_market_data(rows, live_updates, last_message, max_age_seconds=20):
             )
         result.append(updated)
     return result, count
+
+
+def apply_exchange_dollar_volumes(rows, live_updates, max_age_seconds=180):
+    """Attach exchange-provided dollar_volume; never estimate it from volume_fp.
+
+    The ticker channel does not send an initial snapshot, so market rows with
+    no recent ticker message intentionally report no dollar volume.
+    """
+    from math import isfinite
+
+    now = time.time()
+    updated_rows = []
+    for row in rows:
+        updated = dict(row)
+        updated.pop("exchange_dollar_volume", None)
+        updated.pop("exchange_dollar_volume_seen_at", None)
+        item = live_updates.get(row["ticker"])
+        if item and now - item.get("seen_at", 0) <= max_age_seconds:
+            raw = (item.get("data") or {}).get("dollar_volume")
+            if raw is not None:
+                try:
+                    amount = float(raw)
+                    if isfinite(amount) and amount >= 0:
+                        updated["exchange_dollar_volume"] = amount
+                        updated["exchange_dollar_volume_seen_at"] = item["seen_at"]
+                except (TypeError, ValueError, KeyError):
+                    pass
+        updated_rows.append(updated)
+    return updated_rows
