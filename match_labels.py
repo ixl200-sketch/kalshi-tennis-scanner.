@@ -101,6 +101,15 @@ def ranked_event_volumes(groups):
     ))
 
 
+def format_notional_volume(volume):
+    """Format $1-per-contract notional without dropping fractional contracts."""
+    if volume is None:
+        return "N/A"
+    if abs(volume - round(volume)) < 0.0000001:
+        return f"${volume:,.0f}"
+    return f"${volume:,.2f}".rstrip("0").rstrip(".")
+
+
 def fetch_event_metadata(tours, session=None, timeout=12):
     """Get the published event titles/subtitles in a few batched requests.
 
