@@ -66,6 +66,29 @@ def event_labels(rows, events=None):
             for key, group in groups.items()}
 
 
+
+def ranked_event_volumes(groups):
+    """Return event IDs and representative 24-hour volume, highest first.
+
+    Two YES contracts may describe the same match. Using their maximum
+    avoids incorrectly summing two mirrored contract volumes as unique activity.
+    """
+    from math import isfinite
+
+    def safe_volume(market):
+        try:
+            value = float(market.get("volume_24h") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, value) if isfinite(value) else 0.0
+
+    ranked = [
+        (event_id, max((safe_volume(m) for m in contracts), default=0.0))
+        for event_id, contracts in groups.items()
+    ]
+    return sorted(ranked, key=lambda item: (-item[1], item[0]))
+
+
 def fetch_event_metadata(tours, session=None, timeout=12):
     """Get the published event titles/subtitles in a few batched requests.
 
