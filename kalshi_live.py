@@ -75,7 +75,7 @@ class LiveTicker:
             if not ticker.startswith(self.PREFIXES):
                 return
             with self._lock:
-                self._latest[ticker] = msg
+                self._latest[ticker] = {"data": msg, "seen_at": time.time()}
                 self._last_message = time.time()
                 self._status = "live"
         except (TypeError, ValueError, AttributeError):
@@ -126,8 +126,9 @@ def overlay_market_data(rows, live_updates, last_message, max_age_seconds=20):
     count = 0
     for row in rows:
         updated = dict(row)
-        tick = live_updates.get(row["ticker"])
-        if tick:
+        item = live_updates.get(row["ticker"])
+        if item and time.time() - item.get("seen_at", 0) <= max_age_seconds:
+            tick = item["data"]
             count += 1
             if tick.get("volume_fp") is not None:
                 try:
