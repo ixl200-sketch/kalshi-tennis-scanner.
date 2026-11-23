@@ -68,25 +68,37 @@ def event_labels(rows, events=None):
 
 
 def ranked_event_volumes(groups):
-    """Return event IDs and representative 24-hour volume, highest first.
+    """Rank matches by summed Kalshi-reported 24h volume across distinct markets.
 
-    Two YES contracts may describe the same match. Using their maximum
-    avoids incorrectly summing two mirrored contract volumes as unique activity.
+    Each volume is the market's exact API volume_24h_fp contract quantity.
+    Event aggregate is a sum across distinct market tickers, NOT a Kalshi-
+    published event total and NOT cash exchanged. Missing data stays missing.
     """
     from math import isfinite
 
-    def safe_volume(market):
-        try:
-            value = float(market.get("volume_24h") or 0)
-        except (TypeError, ValueError):
-            return 0.0
-        return max(0.0, value) if isfinite(value) else 0.0
-
-    ranked = [
-        (event_id, max((safe_volume(m) for m in contracts), default=0.0))
-        for event_id, contracts in groups.items()
-    ]
-    return sorted(ranked, key=lambda item: (-item[1], item[0]))
+    ranked = []
+    for event_id, contracts in groups.items():
+        by_ticker = {}
+        for market in contracts:
+            ticker = market.get("ticker")
+            if not ticker or ticker in by_ticker:
+                continue
+            raw = market.get("volume_24h")
+            if raw is None or raw == "":
+                by_ticker[ticker] = None
+                continue
+            try:
+                value = float(raw)
+                by_ticker[ticker] = value if isfinite(value) and value >= 0 else None
+            except (TypeError, ValueError):
+                by_ticker[ticker] = None
+        valid = [v for v in by_ticker.values() if v is not None]
+        # Partial market data would give a deceptively low event sum.
+        total = sum(valid) if valid and len(valid) == len(by_ticker) else None
+        ranked.append((event_id, total))
+    return sorted(ranked, key=lambda item: (
+        item[1] is None, -(item[1] or 0), item[0]
+    ))
 
 
 def fetch_event_metadata(tours, session=None, timeout=12):
