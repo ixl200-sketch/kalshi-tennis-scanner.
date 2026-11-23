@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 
-from match_labels import event_labels, fetch_event_metadata, player_name
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
 
 
 class MatchupLabelsTests(unittest.TestCase):
@@ -26,6 +26,25 @@ class MatchupLabelsTests(unittest.TestCase):
 
     def test_clean_outcome(self):
         self.assertEqual(player_name("Alex Rivera wins"), "Alex Rivera")
+
+    def test_volume_order_and_max_per_event(self):
+        groups = {
+            "LOW": [{"volume_24h": 125}, {"volume_24h": 100}],
+            "HIGH": [{"volume_24h": 500}, {"volume_24h": 480}],
+            "MID": [{"volume_24h": 250}],
+        }
+        # HIGH is 500, not 980 (two separate player contracts).
+        self.assertEqual(ranked_event_volumes(groups),
+                         [("HIGH", 500.0), ("MID", 250.0), ("LOW", 125.0)])
+
+    def test_volume_missing_invalid_and_tie_order(self):
+        groups = {
+            "B": [{"volume_24h": None}],
+            "A": [{"volume_24h": "nan"}, {"volume_24h": -5}],
+            "C": [{"volume_24h": "bad"}],
+        }
+        self.assertEqual(ranked_event_volumes(groups),
+                         [("A", 0.0), ("B", 0.0), ("C", 0.0)])
 
     def test_event_fetch(self):
         session = Mock()
