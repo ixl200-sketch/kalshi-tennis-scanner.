@@ -68,11 +68,13 @@ def event_labels(rows, events=None):
 
 
 def ranked_event_volumes(groups):
-    """Rank matches by summed Kalshi-reported 24h volume across distinct markets.
+    """Rank match events by total Kalshi market volume since market creation.
 
-    Each volume is the market's exact API volume_24h_fp contract quantity.
-    Event aggregate is a sum across distinct market tickers, NOT a Kalshi-
-    published event total and NOT cash exchanged. Missing data stays missing.
+    Read volume_fp (not volume_24h_fp) for each distinct player contract.
+    Values represent $1-settlement-face-value notional quantities. Group
+    totals are computed from the market records and may not perfectly match
+    Kalshi's website if its event volume accounting differs.
+    Missing or invalid values result in N/A, not fabricated zeroes.
     """
     from math import isfinite
 
@@ -83,31 +85,24 @@ def ranked_event_volumes(groups):
             ticker = market.get("ticker")
             if not ticker or ticker in by_ticker:
                 continue
-            raw = market.get("volume_24h")
-            if raw is None or raw == "":
-                by_ticker[ticker] = None
-                continue
+            raw = market.get("volume_total")
             try:
-                value = float(raw)
+                value = float(raw) if raw not in (None, "") else float("nan")
                 by_ticker[ticker] = value if isfinite(value) and value >= 0 else None
             except (TypeError, ValueError):
                 by_ticker[ticker] = None
-        valid = [v for v in by_ticker.values() if v is not None]
-        # Partial market data would give a deceptively low event sum.
-        total = sum(valid) if valid and len(valid) == len(by_ticker) else None
+
+        values = list(by_ticker.values())
+        total = sum(values) if values and all(v is not None for v in values) else None
         ranked.append((event_id, total))
-    return sorted(ranked, key=lambda item: (
-        item[1] is None, -(item[1] or 0), item[0]
-    ))
+    return sorted(ranked, key=lambda item: (item[1] is None, -(item[1] or 0), item[0]))
 
 
 def format_notional_volume(volume):
-    """Format $1-per-contract notional without dropping fractional contracts."""
+    """Display whole-dollar $-notional volume with thousands separators."""
     if volume is None:
         return "N/A"
-    if abs(volume - round(volume)) < 0.0000001:
-        return f"${volume:,.0f}"
-    return f"${volume:,.2f}".rstrip("0").rstrip(".")
+    return f"${volume:,.0f}"
 
 
 def fetch_event_metadata(tours, session=None, timeout=12):

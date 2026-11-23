@@ -69,11 +69,11 @@ def dashboard():
         for market in match_rows:
             group_id = market.get('event_ticker') or market['ticker']
             event_groups.setdefault(group_id, []).append(market)
-        # Aggregate distinct market 24h contract volumes reported by Kalshi.
-        # This is $1 settlement notional, not the cash paid for trades.
+        # Aggregate cumulative Kalshi volume_fp across distinct match contracts.
+        # Notional $ amounts represent $1 settlement face value per contract.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('24h match volume: sum of Kalshi-reported volumes across the displayed open contracts for each match; dollar amounts are $1-per-contract notional, not cash paid.')
+        st.caption('Total match volume since opening (Kalshi volume_fp). Whole-dollar $1-per-contract notional; not actual cash paid. Refreshed every 60 seconds.')
         # Recreate the display options from the newly fetched volume on EVERY
         # 60-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
@@ -105,7 +105,7 @@ def dashboard():
             index=event_ids.index(previous_event),
             key='matchup_display_option',
             on_change=remember_match,
-            help='24h volume is summed from Kalshi volume_24h_fp for distinct contracts in the same match, refreshed every 60 seconds. $ is settlement notional ($1 per contract), not actual money paid. N/A means incomplete data.',
+            help='Cumulative volume from Kalshi volume_fp across distinct open contracts in this match, refreshed every 60 seconds. Displayed as whole-dollar settlement notional; N/A means missing data. Kalshi website totals may use different event accounting.',
         )
         chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]
