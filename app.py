@@ -76,7 +76,7 @@ def dashboard():
         if stream_status in ('error', 'reconnecting') and stream_error:
             st.warning('Live feed unavailable. Displaying the latest REST snapshot.')
     else:
-        st.caption('Data mode: 60-second REST updates · live streaming requires a Kalshi API key in private Streamlit secrets.')
+        st.warning('Live dollar volume is unavailable: Kalshi API credentials are not configured in Streamlit Secrets. Open Manage app → Settings → Secrets and configure KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PEM. Until then, only exchange-provided REST dollar values (if supplied) can be displayed.')
     if errors:
         st.warning('Some requests failed: ' + ' | '.join(errors))
     market_controls = st.container()
@@ -112,7 +112,13 @@ def dashboard():
         # Use only fresh exchange-reported dollar_volume ticker messages.
         ranked_events = ranked_exchange_dollar_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('Match volume uses Kalshi WebSocket dollar_volume when available. N/A means the live exchange dollar data is missing or stale; no values are estimated. Event aggregation may still differ from Kalshi.com.')
+        known_volume_count = sum(volume is not None for volume in event_volume.values())
+        if known_volume_count == 0:
+            if _feed:
+                st.info('Waiting for Kalshi dollar-volume updates. The ticker feed only sends changes; no exchange-reported dollar values have been received for all contracts of any listed match. Keep the app open during active trading and check the feed status above.')
+            else:
+                st.info('Dollar volume is N/A because no authenticated Kalshi ticker feed is configured and the REST market data has not supplied dollar_volume. Contract volume is intentionally not displayed as cash.')
+        st.caption(f'Exchange-dollar coverage: {known_volume_count} of {len(event_volume)} matches. Only directly reported dollar_volume is used. Aggregating contracts may still differ from Kalshi.com event volume.')
         # Recreate display options from the latest stream on EVERY
         # 2-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.

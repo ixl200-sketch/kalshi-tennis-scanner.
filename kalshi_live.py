@@ -175,8 +175,9 @@ def apply_exchange_dollar_volumes(rows, live_updates, max_age_seconds=180):
     updated_rows = []
     for row in rows:
         updated = dict(row)
-        updated.pop("exchange_dollar_volume", None)
-        updated.pop("exchange_dollar_volume_seen_at", None)
+        # A REST baseline can already contain a separately reported dollar_volume.
+        # Retain it until a newer ticker message replaces it; never infer dollars
+        # from volume_fp contract counts.
         item = live_updates.get(row["ticker"])
         if item and now - item.get("seen_at", 0) <= max_age_seconds:
             raw = (item.get("data") or {}).get("dollar_volume")
