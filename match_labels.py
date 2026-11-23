@@ -98,6 +98,33 @@ def ranked_event_volumes(groups):
     return sorted(ranked, key=lambda item: (item[1] is None, -(item[1] or 0), item[0]))
 
 
+def ranked_exchange_dollar_volumes(groups):
+    """Sort matches by available Kalshi ticker dollar_volume, not contract count.
+
+    Only use fresh exchange-reported dollar values, one per distinct market.
+    An incomplete event is marked N/A instead of extrapolated or doubled.
+    """
+    from math import isfinite
+    ranked = []
+    for event_id, markets in groups.items():
+        seen = set()
+        values = []
+        for market in markets:
+            ticker = market.get("ticker")
+            if not ticker or ticker in seen:
+                continue
+            seen.add(ticker)
+            amount = market.get("exchange_dollar_volume")
+            try:
+                value = float(amount) if amount is not None else float("nan")
+                values.append(value if isfinite(value) and value >= 0 else None)
+            except (TypeError, ValueError):
+                values.append(None)
+        total = sum(values) if values and all(x is not None for x in values) else None
+        ranked.append((event_id, total))
+    return sorted(ranked, key=lambda item: (item[1] is None, -(item[1] or 0), item[0]))
+
+
 def format_notional_volume(volume):
     """Display whole-dollar $-notional volume with thousands separators."""
     if volume is None:

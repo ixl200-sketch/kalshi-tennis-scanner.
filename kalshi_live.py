@@ -135,6 +135,17 @@ def overlay_market_data(rows, live_updates, last_message, max_age_seconds=20):
                     updated["volume_total"] = float(tick["volume_fp"])
                 except (ValueError, TypeError):
                     pass
+            # Kalshi's ticker feed has a separate, exchange-reported
+            # dollar_volume. Never convert contract volume_fp into dollars.
+            if tick.get("dollar_volume") is not None:
+                try:
+                    from math import isfinite
+                    dollar_volume = float(tick["dollar_volume"])
+                    if isfinite(dollar_volume) and dollar_volume >= 0:
+                        updated["exchange_dollar_volume"] = dollar_volume
+                        updated["exchange_dollar_volume_seen_at"] = item["seen_at"]
+                except (TypeError, ValueError, KeyError):
+                    pass
             for src, dest in (("yes_bid_dollars", "bid_c"),
                               ("yes_ask_dollars", "ask_c"),
                               ("price_dollars", "last_c")):
@@ -150,3 +161,32 @@ def overlay_market_data(rows, live_updates, last_message, max_age_seconds=20):
             )
         result.append(updated)
     return result, count
+
+
+def apply_exchange_dollar_volumes(rows, live_updates, max_age_seconds=180):
+    """Attach exchange-provided dollar_volume; never estimate it from volume_fp.
+
+    The ticker channel does not send an initial snapshot, so market rows with
+    no recent ticker message intentionally report no dollar volume.
+    """
+    from math import isfinite
+
+    now = time.time()
+    updated_rows = []
+    for row in rows:
+        updated = dict(row)
+        updated.pop("exchange_dollar_volume", None)
+        updated.pop("exchange_dollar_volume_seen_at", None)
+        item = live_updates.get(row["ticker"])
+        if item and now - item.get("seen_at", 0) <= max_age_seconds:
+            raw = (item.get("data") or {}).get("dollar_volume")
+            if raw is not None:
+                try:
+                    amount = float(raw)
+                    if isfinite(amount) and amount >= 0:
+                        updated["exchange_dollar_volume"] = amount
+                        updated["exchange_dollar_volume_seen_at"] = item["seen_at"]
+                except (TypeError, ValueError, KeyError):
+                    pass
+        updated_rows.append(updated)
+    return updated_rows

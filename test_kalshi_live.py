@@ -3,7 +3,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from kalshi_live import LiveTicker, overlay_market_data
+from kalshi_live import LiveTicker, overlay_market_data, apply_exchange_dollar_volumes
 
 
 class StreamingTests(unittest.TestCase):
@@ -28,6 +28,24 @@ class StreamingTests(unittest.TestCase):
         out, count = overlay_market_data(baseline, updates, time.time())
         self.assertEqual(count, 0)
         self.assertEqual(out[0]["volume_total"], 10)
+
+    def test_exchange_dollar_volume_uses_field_not_contract_count(self):
+        baseline = [{"ticker": "KXATPMATCH-EXAMPLE", "volume_total": 800000}]
+        updates = {"KXATPMATCH-EXAMPLE": {
+            "seen_at": time.time(),
+            "data": {"volume_fp": "800000.00", "dollar_volume": 400000},
+        }}
+        rows = apply_exchange_dollar_volumes(baseline, updates)
+        self.assertEqual(rows[0]["exchange_dollar_volume"], 400000)
+        self.assertEqual(rows[0]["volume_total"], 800000)
+
+    def test_missing_or_stale_dollar_volume_is_not_guessed(self):
+        baseline = [{"ticker": "X", "volume_total": 1000}]
+        self.assertNotIn("exchange_dollar_volume", apply_exchange_dollar_volumes(baseline, {})[0])
+        stale = {"X": {"seen_at": time.time() - 500, "data": {"dollar_volume": 500}}}
+        self.assertNotIn("exchange_dollar_volume", apply_exchange_dollar_volumes(baseline, stale)[0])
+        missing = {"X": {"seen_at": time.time(), "data": {"volume_fp": "1000"}}}
+        self.assertNotIn("exchange_dollar_volume", apply_exchange_dollar_volumes(baseline, missing)[0])
 
     def test_websocket_messages_store_only_tennis(self):
         feed = LiveTicker.__new__(LiveTicker)
