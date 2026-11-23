@@ -135,6 +135,17 @@ def overlay_market_data(rows, live_updates, last_message, max_age_seconds=20):
                     updated["volume_total"] = float(tick["volume_fp"])
                 except (ValueError, TypeError):
                     pass
+            # Kalshi's ticker feed has a separate, exchange-reported
+            # dollar_volume. Never convert contract volume_fp into dollars.
+            if tick.get("dollar_volume") is not None:
+                try:
+                    from math import isfinite
+                    dollar_volume = float(tick["dollar_volume"])
+                    if isfinite(dollar_volume) and dollar_volume >= 0:
+                        updated["exchange_dollar_volume"] = dollar_volume
+                        updated["exchange_dollar_volume_seen_at"] = item["seen_at"]
+                except (TypeError, ValueError, KeyError):
+                    pass
             for src, dest in (("yes_bid_dollars", "bid_c"),
                               ("yes_ask_dollars", "ask_c"),
                               ("price_dollars", "last_c")):
