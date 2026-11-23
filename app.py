@@ -73,47 +73,12 @@ def dashboard():
         # Do not sum mirrored player contracts and double-count match activity.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.markdown('**Tournament | Player 1 vs. Player 2**')
-        st.caption('Matches are ranked by 24-hour notional volume (contracts × $1 face value), highest first.')
-        event_ids = [event_id for event_id, _volume in ranked_events]
-        selection_key = 'selected_match_event'
-        if st.session_state.get(selection_key) not in event_groups:
-            st.session_state[selection_key] = event_ids[0]
-        chosen_event = st.session_state[selection_key]
-
-        # A popover gives each option a separate, right-aligned volume column.
-        # A native selectbox cannot align only the price substring at the far edge.
-        match_left, volume_right = st.columns([5, 1], vertical_alignment='center')
-        with match_left:
-            with st.popover(f"▾  {labels[chosen_event]}", use_container_width=True):
-                search = st.text_input(
-                    'Search tournament or players',
-                    key='matchup_search',
-                    placeholder='Search matchups...',
-                ).strip().casefold()
-                visible_ids = [event_id for event_id in event_ids
-                               if not search or search in labels[event_id].casefold()]
-                if not visible_ids:
-                    st.info('No matching tennis events.')
-                for event_id in visible_ids:
-                    option_left, option_right = st.columns([5, 1], vertical_alignment='center')
-                    with option_left:
-                        if st.button(labels[event_id], key=f'match_option_{event_id}',
-                                     use_container_width=True):
-                            st.session_state[selection_key] = event_id
-                            st.rerun()
-                    with option_right:
-                        st.markdown(
-                            f'<div style="text-align:right;white-space:nowrap;font-weight:600">'
-                            f'${event_volume[event_id]:,.0f}</div>',
-                            unsafe_allow_html=True,
-                        )
-        with volume_right:
-            st.markdown(
-                f'<div style="text-align:right;white-space:nowrap;font-weight:700">'
-                f'${event_volume[chosen_event]:,.0f}</div>',
-                unsafe_allow_html=True,
-            )
+        chosen_event = st.selectbox(
+            'Tournament | Player 1 vs. Player 2',
+            [event_id for event_id, _volume in ranked_events],
+            format_func=lambda event_id: f"{labels[event_id]} | ${event_volume[event_id]:,.0f}",
+            help='Sorted highest to lowest by 24h volume. Dollar figures represent $1-per-contract notional volume, not cash exchanged.',
+        )
         candidates = event_groups[chosen_event]
         if len(candidates) > 1:
             selected = st.selectbox(
