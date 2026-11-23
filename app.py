@@ -2,11 +2,13 @@
 from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
+from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
+apply_theme()
 st.title('Kalshi Tennis Scanner')
-st.caption('Read-only public Kalshi market data · polling, not tick-by-tick · no live tennis score feed')
+st.caption('Independent project · not affiliated with Kalshi · read-only public market data · polling, not tick-by-tick · no live tennis score feed')
 
 with st.sidebar:
     st.header('Scanner controls')
