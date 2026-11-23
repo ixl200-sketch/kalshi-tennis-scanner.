@@ -73,12 +73,40 @@ def dashboard():
         # Do not sum mirrored player contracts and double-count match activity.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
-        chosen_event = st.selectbox(
+        # Recreate the display options from the newly fetched volume on EVERY
+        # 60-second fragment rerun. String options force Streamlit to refresh the
+        # visible label when the volume changes; internal event IDs stay stable.
+        event_ids = [event_id for event_id, _volume in ranked_events]
+        option_by_event = {
+            event_id: f"{labels[event_id]} | ${event_volume[event_id]:,.0f}"
+            for event_id in event_ids
+        }
+        event_by_option = {label: event_id for event_id, label in option_by_event.items()}
+        if len(event_by_option) != len(event_ids):
+            # Rare case: distinguish identically formatted match labels.
+            option_by_event = {
+                event_id: f"{option_by_event[event_id]} ({i + 1})"
+                for i, event_id in enumerate(event_ids)
+            }
+            event_by_option = {label: event_id for event_id, label in option_by_event.items()}
+        previous_event = st.session_state.get('match_event_id')
+        if previous_event not in option_by_event:
+            previous_event = event_ids[0]
+
+        def remember_match():
+            st.session_state['match_event_id'] = event_by_option[
+                st.session_state['matchup_display_option']
+            ]
+
+        selected_option = st.selectbox(
             'Tournament | Player 1 vs. Player 2',
-            [event_id for event_id, _volume in ranked_events],
-            format_func=lambda event_id: f"{labels[event_id]} | ${event_volume[event_id]:,.0f}",
-            help='Sorted highest to lowest by 24h volume. Dollar figures represent $1-per-contract notional volume, not cash exchanged.',
+            [option_by_event[event_id] for event_id in event_ids],
+            index=event_ids.index(previous_event),
+            key='matchup_display_option',
+            on_change=remember_match,
+            help='Volumes and rankings update every 60 seconds from the latest market scan. Dollar figures indicate $1-per-contract notional volume, not cash exchanged.',
         )
+        chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]
         if len(candidates) > 1:
             selected = st.selectbox(
