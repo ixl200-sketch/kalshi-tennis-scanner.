@@ -47,6 +47,21 @@ class StreamingTests(unittest.TestCase):
         missing = {"X": {"seen_at": time.time(), "data": {"volume_fp": "1000"}}}
         self.assertNotIn("exchange_dollar_volume", apply_exchange_dollar_volumes(baseline, missing)[0])
 
+    def test_rest_exchange_dollar_value_survives_without_stream_message(self):
+        # If the public market response includes dollar_volume, use that actual
+        # exchange value even when the WebSocket has not produced a ticker.
+        baseline = [{"ticker": "X", "exchange_dollar_volume": 200.0,
+                     "volume_total": 900.0}]
+        out = apply_exchange_dollar_volumes(baseline, {})
+        self.assertEqual(out[0]["exchange_dollar_volume"], 200.0)
+        self.assertEqual(out[0]["volume_total"], 900.0)
+
+    def test_recent_websocket_message_overrides_rest_dollars(self):
+        baseline = [{"ticker": "X", "exchange_dollar_volume": 200.0}]
+        updates = {"X": {"seen_at": time.time(), "data": {"dollar_volume": 250}}}
+        out = apply_exchange_dollar_volumes(baseline, updates)
+        self.assertEqual(out[0]["exchange_dollar_volume"], 250.0)
+
     def test_websocket_messages_store_only_tennis(self):
         feed = LiveTicker.__new__(LiveTicker)
         import threading
