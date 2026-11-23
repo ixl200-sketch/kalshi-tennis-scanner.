@@ -6,7 +6,7 @@ from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
-from match_labels import event_labels, fetch_event_metadata, player_name
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -69,11 +69,15 @@ def dashboard():
         for market in match_rows:
             group_id = market.get('event_ticker') or market['ticker']
             event_groups.setdefault(group_id, []).append(market)
+        # Rank matches by the most active contract's 24-hour volume.
+        # Do not sum mirrored player contracts and double-count match activity.
+        ranked_events = ranked_event_volumes(event_groups)
+        event_volume = dict(ranked_events)
         chosen_event = st.selectbox(
-            'Tournament | Player 1 vs. Player 2',
-            list(event_groups),
-            format_func=lambda event_id: labels[event_id],
-            help='Select a matchup. All market ticker IDs are kept internally.',
+            '24h Volume | Tournament | Player 1 vs. Player 2',
+            [event_id for event_id, _volume in ranked_events],
+            format_func=lambda event_id: f"{event_volume[event_id]:,.0f} | {labels[event_id]}",
+            help='Highest 24-hour volume first. Volume uses the most active player contract per match; ticker IDs remain internal.',
         )
         candidates = event_groups[chosen_event]
         if len(candidates) > 1:
