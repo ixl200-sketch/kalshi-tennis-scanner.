@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
 
 
 class MatchupLabelsTests(unittest.TestCase):
@@ -53,6 +53,11 @@ class MatchupLabelsTests(unittest.TestCase):
         }
         self.assertEqual(ranked_event_volumes(groups),
                          [("D", 0.0), ("A", None), ("B", None), ("C", None)])
+
+    def test_fractional_kalshi_volume_formatting(self):
+        self.assertEqual(format_notional_volume(1200.25), "$1,200.25")
+        self.assertEqual(format_notional_volume(1200), "$1,200")
+        self.assertEqual(format_notional_volume(None), "N/A")
 
     def test_event_fetch(self):
         session = Mock()
