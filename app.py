@@ -6,7 +6,7 @@ from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -69,16 +69,17 @@ def dashboard():
         for market in match_rows:
             group_id = market.get('event_ticker') or market['ticker']
             event_groups.setdefault(group_id, []).append(market)
-        # Rank matches by the most active contract's 24-hour volume.
-        # Do not sum mirrored player contracts and double-count match activity.
+        # Aggregate distinct market 24h contract volumes reported by Kalshi.
+        # This is $1 settlement notional, not the cash paid for trades.
         ranked_events = ranked_event_volumes(event_groups)
         event_volume = dict(ranked_events)
+        st.caption('24h match volume: sum of Kalshi-reported volumes across the displayed open contracts for each match; dollar amounts are $1-per-contract notional, not cash paid.')
         # Recreate the display options from the newly fetched volume on EVERY
         # 60-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
         event_ids = [event_id for event_id, _volume in ranked_events]
         option_by_event = {
-            event_id: f"{labels[event_id]} | ${event_volume[event_id]:,.0f}"
+            event_id: f"{labels[event_id]} | {format_notional_volume(event_volume[event_id])}"
             for event_id in event_ids
         }
         event_by_option = {label: event_id for event_id, label in option_by_event.items()}
@@ -104,7 +105,7 @@ def dashboard():
             index=event_ids.index(previous_event),
             key='matchup_display_option',
             on_change=remember_match,
-            help='Volumes and rankings update every 60 seconds from the latest market scan. Dollar figures indicate $1-per-contract notional volume, not cash exchanged.',
+            help='24h volume is summed from Kalshi volume_24h_fp for distinct contracts in the same match, refreshed every 60 seconds. $ is settlement notional ($1 per contract), not actual money paid. N/A means incomplete data.',
         )
         chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]

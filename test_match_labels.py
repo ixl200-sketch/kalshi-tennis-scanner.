@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
 
 
 class MatchupLabelsTests(unittest.TestCase):
@@ -27,24 +27,37 @@ class MatchupLabelsTests(unittest.TestCase):
     def test_clean_outcome(self):
         self.assertEqual(player_name("Alex Rivera wins"), "Alex Rivera")
 
-    def test_volume_order_and_max_per_event(self):
+    def test_volume_aggregation_and_sort_order(self):
         groups = {
-            "LOW": [{"volume_24h": 125}, {"volume_24h": 100}],
-            "HIGH": [{"volume_24h": 500}, {"volume_24h": 480}],
-            "MID": [{"volume_24h": 250}],
+            "LOW": [{"ticker": "L1", "volume_24h": 125}, {"ticker": "L2", "volume_24h": 100}],
+            "HIGH": [{"ticker": "H1", "volume_24h": 500}, {"ticker": "H2", "volume_24h": 480}],
+            "MID": [{"ticker": "M1", "volume_24h": 250}],
         }
-        # HIGH is 500, not 980 (two separate player contracts).
         self.assertEqual(ranked_event_volumes(groups),
-                         [("HIGH", 500.0), ("MID", 250.0), ("LOW", 125.0)])
+                         [("HIGH", 980.0), ("MID", 250.0), ("LOW", 225.0)])
 
-    def test_volume_missing_invalid_and_tie_order(self):
+    def test_duplicate_tickers_not_double_counted(self):
+        groups = {"X": [
+            {"ticker": "ONE", "volume_24h": 100},
+            {"ticker": "ONE", "volume_24h": 100},
+            {"ticker": "TWO", "volume_24h": 50},
+        ]}
+        self.assertEqual(ranked_event_volumes(groups), [("X", 150.0)])
+
+    def test_missing_volume_is_unknown_not_zero(self):
         groups = {
-            "B": [{"volume_24h": None}],
-            "A": [{"volume_24h": "nan"}, {"volume_24h": -5}],
-            "C": [{"volume_24h": "bad"}],
+            "B": [{"ticker": "B1", "volume_24h": None}],
+            "A": [{"ticker": "A1", "volume_24h": "nan"}],
+            "C": [{"ticker": "C1", "volume_24h": 10}, {"ticker": "C2", "volume_24h": None}],
+            "D": [{"ticker": "D1", "volume_24h": 0}],
         }
         self.assertEqual(ranked_event_volumes(groups),
-                         [("A", 0.0), ("B", 0.0), ("C", 0.0)])
+                         [("D", 0.0), ("A", None), ("B", None), ("C", None)])
+
+    def test_fractional_kalshi_volume_formatting(self):
+        self.assertEqual(format_notional_volume(1200.25), "$1,200.25")
+        self.assertEqual(format_notional_volume(1200), "$1,200")
+        self.assertEqual(format_notional_volume(None), "N/A")
 
     def test_event_fetch(self):
         session = Mock()
