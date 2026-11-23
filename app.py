@@ -6,6 +6,7 @@ from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
+from match_labels import event_labels, fetch_event_metadata, player_name
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
 apply_theme()
@@ -25,6 +26,11 @@ if not tours:
     st.warning('Select at least one series.'); st.stop()
 
 interval = {'Manual': None, '30 seconds':'30s','60 seconds':'60s','120 seconds':'120s'}[refresh]
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_event_metadata(selected_tours):
+    return fetch_event_metadata(selected_tours)
+
 
 @st.fragment(run_every=interval)
 def dashboard():
@@ -55,12 +61,33 @@ def dashboard():
     df = pd.DataFrame(rows)
     with market_controls:
         st.caption(f'Last requested: {started.strftime("%Y-%m-%d %H:%M:%S UTC")} · {len(rows)} open market contracts received · {len(tours)} series queried')
-        selected = st.selectbox(
-            'Ticker',
-            df['ticker'].tolist(),
-            format_func=lambda t: f"{df.loc[df['ticker'] == t, 'title'].iloc[0]} | {t}",
-            help='Select a market for Price History and Trade Value Analysis.',
+        # Display tournament + matchup to users; ticker IDs remain internal API keys.
+        match_rows = df.to_dict('records')
+        event_info = cached_event_metadata(tuple(tours))
+        labels = event_labels(match_rows, event_info)
+        event_groups = {}
+        for market in match_rows:
+            group_id = market.get('event_ticker') or market['ticker']
+            event_groups.setdefault(group_id, []).append(market)
+        chosen_event = st.selectbox(
+            'Tournament | Player 1 vs. Player 2',
+            list(event_groups),
+            format_func=lambda event_id: labels[event_id],
+            help='Select a matchup. All market ticker IDs are kept internally.',
         )
+        candidates = event_groups[chosen_event]
+        if len(candidates) > 1:
+            selected = st.selectbox(
+                'Player / contract outcome to analyze',
+                [market['ticker'] for market in candidates],
+                format_func=lambda ticker: player_name(next(
+                    market['yes_label'] for market in candidates if market['ticker'] == ticker
+                )) or 'YES outcome',
+                help='Each player can have a separate YES contract for the same match.',
+            )
+        else:
+            selected = candidates[0]['ticker']
+        display_match = labels[chosen_event]
         row = df.set_index('ticker').loc[selected].to_dict()
 
     with overview:
@@ -77,7 +104,8 @@ def dashboard():
             st.info('No contracts pass your current spread and volume filters.')
         else:
             filtered = filtered.sort_values(['spread_c','volume_24h'],ascending=[True,False])
-            show_cols = ['tour','title','yes_label','bid_c','ask_c','spread_c','last_c','volume_24h','open_interest','ticker']
+            filtered['Match'] = filtered['event_ticker'].map(labels)
+            show_cols = ['Match','yes_label','bid_c','ask_c','spread_c','last_c','volume_24h','open_interest']
             st.dataframe(filtered[show_cols].rename(columns={'bid_c':'YES bid ¢','ask_c':'YES ask ¢','spread_c':'Spread ¢','last_c':'Last ¢','volume_24h':'24h volume','open_interest':'Open interest','yes_label':'YES outcome'}), hide_index=True, use_container_width=True)
             st.download_button('Export watchlist CSV', filtered.to_csv(index=False), file_name='kalshi_tennis_watchlist.csv', mime='text/csv')
 
@@ -91,7 +119,7 @@ def dashboard():
             hist['observed_at'] = pd.to_datetime(hist['observed_at'],utc=True)
             st.line_chart(hist.set_index('observed_at')[['bid_c','ask_c']], y_label='YES price (¢)')
             st.caption('Chart contains only snapshots collected while this app is running. It does not backfill historical quotes.')
-        st.markdown(f'**Market ticker:** `{selected}` · **Event:** `{row["event_ticker"]}`')
+        st.markdown(f'**Match:** {display_match}')
 
     with trade_value:
         st.subheader('Optional: your independent fair-value estimate')
@@ -113,7 +141,7 @@ def dashboard():
     with data_explorer:
         st.subheader('Kalshi Market Data Explorer')
         st.caption('Public Kalshi API data for the selected tennis contract. Quotes and trades are exchange data, not an independent tennis prediction. No account access or orders.')
-        st.write(f'**Selected market:** `{selected}`')
+        st.write(f'**Selected match:** {display_match}')
         st.info('Use the buttons below to request detailed data on demand. This avoids fetching every order book on every dashboard refresh.')
         depth = st.selectbox('Order-book levels per side', [5, 10, 20, 50, 100, 0], index=2,
                              format_func=lambda x: 'All levels' if x == 0 else str(x))
