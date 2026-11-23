@@ -6,8 +6,8 @@ from kalshi_theme import apply_theme
 from scanner import SERIES, scan, save_snapshots, history, best_opportunity
 from kalshi_data import get_market, get_orderbook, orderbook_rows, get_trades, get_candlesticks, candle_rows
 import requests
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
-from kalshi_live import LiveTicker, overlay_market_data
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_exchange_dollar_volumes, format_notional_volume
+from kalshi_live import LiveTicker, overlay_market_data, apply_exchange_dollar_volumes
 from volume_reconcile import get_event_snapshot, reconciliation_report, whole_dollars
 
 st.set_page_config(page_title='Kalshi Tennis Scanner', page_icon='🎾', layout='wide')
@@ -67,6 +67,7 @@ def dashboard():
     if _feed:
         live_data, last_live, stream_status, stream_error = _feed.snapshot()
         rows, updated_count = overlay_market_data(rows, live_data, last_live)
+        rows = apply_exchange_dollar_volumes(rows, live_data)
         if last_live and updated_count:
             lag_seconds = max(0, int(__import__('time').time() - last_live))
             st.caption(f'Live feed connected · latest update {lag_seconds}s ago · {updated_count} tennis contracts updated')
@@ -107,13 +108,13 @@ def dashboard():
         for market in match_rows:
             group_id = market.get('event_ticker') or market['ticker']
             event_groups.setdefault(group_id, []).append(market)
-        # Aggregate cumulative Kalshi volume_fp across distinct match contracts.
-        # Notional $ amounts represent $1 settlement face value per contract.
-        ranked_events = ranked_event_volumes(event_groups)
+        # Never label Kalshi contract volume_fp as dollar volume.
+        # Use only fresh exchange-reported dollar_volume ticker messages.
+        ranked_events = ranked_exchange_dollar_volumes(event_groups)
         event_volume = dict(ranked_events)
-        st.caption('Volume shown below is calculated from Kalshi contract data; it is NOT verified as the Kalshi.com match-page volume. Whole-dollar notional, refreshed when new data arrives.')
-        # Recreate the display options from the newly fetched volume on EVERY
-        # 60-second fragment rerun. String options force Streamlit to refresh the
+        st.caption('Match volume uses Kalshi WebSocket dollar_volume when available. N/A means the live exchange dollar data is missing or stale; no values are estimated. Event aggregation may still differ from Kalshi.com.')
+        # Recreate display options from the latest stream on EVERY
+        # 2-second fragment rerun. String options force Streamlit to refresh the
         # visible label when the volume changes; internal event IDs stay stable.
         event_ids = [event_id for event_id, _volume in ranked_events]
         option_by_event = {
@@ -143,7 +144,7 @@ def dashboard():
             index=event_ids.index(previous_event),
             key='matchup_display_option',
             on_change=remember_match,
-            help='Calculated sum of distinct market volume_fp contract counts, not the authoritative website match volume. Values update from Kalshi data but may be higher than Kalshi.com. N/A means missing data.',
+            help='Sum of exchange-reported dollar_volume fields for each distinct contract in the event. Requires live WebSocket credentials and recent ticker messages. N/A rather than a contract-count estimate when unavailable. Website aggregation is not independently verified.',
         )
         chosen_event = event_by_option[selected_option]
         candidates = event_groups[chosen_event]
@@ -166,8 +167,8 @@ def dashboard():
         q1.metric('YES bid', f"{row['bid_c']:,.1f}¢" if pd.notna(row['bid_c']) else 'No quote')
         q2.metric('YES ask', f"{row['ask_c']:,.1f}¢" if pd.notna(row['ask_c']) else 'No quote')
         q3.metric('Spread', f"{row['spread_c']:,.1f}¢" if pd.notna(row['spread_c']) else 'N/A')
-        q4.metric('Match volume · notional', format_notional_volume(event_volume[chosen_event]))
-        st.caption('Quotes can change. Match volume is an app-computed total of reported contract volumes, not cash paid or a guaranteed match of Kalshi.com.')
+        q4.metric('Exchange dollar volume', format_notional_volume(event_volume[chosen_event]))
+        st.caption('Volume figures come from the exchange dollar-volume feed; an event total is computed from its distinct contract messages. No exact website match is promised until verified.')
 
     with overview:
         st.subheader('Market overview')
@@ -315,7 +316,7 @@ def dashboard():
             st.caption('Select Load historical candles to retrieve exchange historical prices.')
 
         st.divider()
-        st.caption('For the Huertas Del Pino vs. Schenekenberg example, Kalshi.com displayed **$662,768 vol** in the screenshot. The audit below checks the API components rather than treating an app sum as the published figure.')
+        st.caption('Historical Kalshi.com screenshot: Huertas Del Pino vs. Schenekenberg showed **$662,768 vol**. Live WebSocket dollar volume is the preferred data source; the audit below compares REST contract counts for diagnosis only.')
         with st.expander('Verify Kalshi volume against the exchange', expanded=False):
             st.caption('Fetch a fresh, uncached Kalshi event snapshot and inspect cumulative volume for each outcome. The dropdown total is calculated by this app; this check does not assume Kalshi.com uses the same event formula.')
             audit_event = st.text_input(
