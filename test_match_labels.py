@@ -27,37 +27,46 @@ class MatchupLabelsTests(unittest.TestCase):
     def test_clean_outcome(self):
         self.assertEqual(player_name("Alex Rivera wins"), "Alex Rivera")
 
-    def test_volume_aggregation_and_sort_order(self):
+    def test_lifetime_volume_matches_kalshi_style(self):
         groups = {
-            "LOW": [{"ticker": "L1", "volume_24h": 125}, {"ticker": "L2", "volume_24h": 100}],
-            "HIGH": [{"ticker": "H1", "volume_24h": 500}, {"ticker": "H2", "volume_24h": 480}],
-            "MID": [{"ticker": "M1", "volume_24h": 250}],
+            "ONOJON": [
+                {"ticker": "ONO", "volume_total": 517350},
+                {"ticker": "JONES", "volume_total": 517351},
+            ],
+            "LOW": [{"ticker": "L1", "volume_total": 15000}],
         }
         self.assertEqual(ranked_event_volumes(groups),
-                         [("HIGH", 980.0), ("MID", 250.0), ("LOW", 225.0)])
+                         [("ONOJON", 1034701.0), ("LOW", 15000.0)])
+        self.assertEqual(format_notional_volume(1034701), "$1,034,701")
 
-    def test_duplicate_tickers_not_double_counted(self):
-        groups = {"X": [
-            {"ticker": "ONE", "volume_24h": 100},
-            {"ticker": "ONE", "volume_24h": 100},
-            {"ticker": "TWO", "volume_24h": 50},
+    def test_24h_volume_does_not_drive_lifetime_ranking(self):
+        groups = {
+            "A": [{"ticker": "A1", "volume_total": 100000, "volume_24h": 20}],
+            "B": [{"ticker": "B1", "volume_total": 1000, "volume_24h": 1000}],
+        }
+        self.assertEqual(ranked_event_volumes(groups), [("A", 100000.0), ("B", 1000.0)])
+
+    def test_duplicate_market_ticker_does_not_inflate_total(self):
+        groups = {"A": [
+            {"ticker": "A1", "volume_total": 100},
+            {"ticker": "A1", "volume_total": 100},
+            {"ticker": "A2", "volume_total": 50},
         ]}
-        self.assertEqual(ranked_event_volumes(groups), [("X", 150.0)])
+        self.assertEqual(ranked_event_volumes(groups), [("A", 150.0)])
 
-    def test_missing_volume_is_unknown_not_zero(self):
+    def test_missing_volume_unknown_and_sort_last(self):
         groups = {
-            "B": [{"ticker": "B1", "volume_24h": None}],
-            "A": [{"ticker": "A1", "volume_24h": "nan"}],
-            "C": [{"ticker": "C1", "volume_24h": 10}, {"ticker": "C2", "volume_24h": None}],
-            "D": [{"ticker": "D1", "volume_24h": 0}],
+            "UNKNOWN": [{"ticker": "A", "volume_total": None}],
+            "PARTIAL": [{"ticker": "B1", "volume_total": 2}, {"ticker": "B2", "volume_total": None}],
+            "KNOWN": [{"ticker": "C", "volume_total": 0}],
         }
         self.assertEqual(ranked_event_volumes(groups),
-                         [("D", 0.0), ("A", None), ("B", None), ("C", None)])
-
-    def test_fractional_kalshi_volume_formatting(self):
-        self.assertEqual(format_notional_volume(1200.25), "$1,200.25")
-        self.assertEqual(format_notional_volume(1200), "$1,200")
+                         [("KNOWN", 0.0), ("PARTIAL", None), ("UNKNOWN", None)])
         self.assertEqual(format_notional_volume(None), "N/A")
+
+    def test_volume_has_no_cents(self):
+        self.assertEqual(format_notional_volume(1200.25), "$1,200")
+        self.assertEqual(format_notional_volume(1200.0), "$1,200")
 
     def test_event_fetch(self):
         session = Mock()
