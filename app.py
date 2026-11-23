@@ -16,7 +16,7 @@ st.caption('Independent project · not affiliated with Kalshi · read-only publi
 with st.sidebar:
     st.header('Scanner controls')
     tours = st.multiselect('Match-winner series', list(SERIES), default=['ATP','WTA','ATP Challenger','WTA Challenger','ITF'])
-    refresh = st.selectbox('Refresh while dashboard is open', ['Manual', '30 seconds', '60 seconds', '120 seconds'], index=1)
+    st.caption('Market data refreshes automatically every 60 seconds while this dashboard is open.')
     max_spread = st.slider('Maximum YES spread (¢)', 1, 50, 20)
     min_volume = st.number_input('Minimum 24h contracts traded', min_value=0, value=0, step=25)
     st.info('Prices are quotes, not guarantees of fill. No trades are submitted.')
@@ -25,7 +25,7 @@ with st.sidebar:
 if not tours:
     st.warning('Select at least one series.'); st.stop()
 
-interval = {'Manual': None, '30 seconds':'30s','60 seconds':'60s','120 seconds':'120s'}[refresh]
+interval = '60s'  # Refresh live market data every minute while the page is open.
 
 @st.cache_data(ttl=600, show_spinner=False)
 def cached_event_metadata(selected_tours):
