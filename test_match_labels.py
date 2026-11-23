@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 
-from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, format_notional_volume
+from match_labels import event_labels, fetch_event_metadata, player_name, ranked_event_volumes, ranked_exchange_dollar_volumes, format_notional_volume
 
 
 class MatchupLabelsTests(unittest.TestCase):
@@ -67,6 +67,26 @@ class MatchupLabelsTests(unittest.TestCase):
     def test_volume_has_no_cents(self):
         self.assertEqual(format_notional_volume(1200.25), "$1,200")
         self.assertEqual(format_notional_volume(1200.0), "$1,200")
+
+    def test_exchange_dollar_rank_uses_feed_not_contracts(self):
+        groups = {
+            "HI": [
+                {"ticker": "P1", "volume_total": 999999, "exchange_dollar_volume": 300000},
+                {"ticker": "P2", "volume_total": 999999, "exchange_dollar_volume": 362768},
+            ],
+            "LOW": [{"ticker": "P3", "volume_total": 2000000, "exchange_dollar_volume": 10000}],
+        }
+        self.assertEqual(ranked_exchange_dollar_volumes(groups),
+                         [("HI", 662768.0), ("LOW", 10000.0)])
+
+    def test_exchange_dollar_rank_requires_all_contracts(self):
+        groups = {
+            "UNAVAILABLE": [{"ticker": "X", "exchange_dollar_volume": 300},
+                            {"ticker": "Y", "volume_total": 900}],
+            "ZERO": [{"ticker": "Z", "exchange_dollar_volume": 0}],
+        }
+        self.assertEqual(ranked_exchange_dollar_volumes(groups),
+                         [("ZERO", 0.0), ("UNAVAILABLE", None)])
 
     def test_event_fetch(self):
         session = Mock()
