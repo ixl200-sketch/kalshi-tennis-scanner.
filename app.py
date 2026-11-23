@@ -15,13 +15,19 @@ st.title('Kalshi Tennis Scanner')
 st.caption('Independent project · not affiliated with Kalshi · read-only public market data · live ticker streaming when configured · no live tennis score feed')
 
 with st.sidebar:
-    st.header('Scanner controls')
-    tours = st.multiselect('Match-winner series', list(SERIES), default=['ATP','WTA','ATP Challenger','WTA Challenger','ITF'])
-    st.caption('Live market updates when the Kalshi WebSocket is connected. REST listings reconcile every 60 seconds.')
-    max_spread = st.slider('Maximum YES spread (¢)', 1, 50, 20)
-    min_volume = st.number_input('Minimum 24h contracts traded', min_value=0, value=0, step=25)
-    st.info('Prices are quotes, not guarantees of fill. No trades are submitted.')
-    st.markdown('[Kalshi API documentation](https://docs.kalshi.com/api-reference/market/get-markets)')
+    st.header('Explore tennis markets')
+    st.caption('Choose which tours to follow. The match list is ranked by cumulative market volume.')
+    tours = st.multiselect('Tours', list(SERIES), default=['ATP','WTA','ATP Challenger','WTA Challenger','ITF'])
+    with st.expander('Watchlist filters', expanded=False):
+        max_spread = st.slider('Maximum YES spread (¢)', 1, 50, 20,
+                               help='Smaller spreads may be easier to trade, but do not guarantee a good price.')
+        min_volume = st.number_input('Minimum 24h contracts traded', min_value=0, value=0, step=25,
+                                     help='Applies to the Market Watchlist, not the match selector.')
+    st.divider()
+    st.caption('Market updates: streaming when connected; otherwise the REST data refreshes every 60 seconds.')
+    with st.expander('About this scanner'):
+        st.caption('Independent project, not affiliated with Kalshi. Read-only: it cannot place orders. Prices are quotes, not guaranteed fills.')
+        st.markdown('[Kalshi API documentation](https://docs.kalshi.com/api-reference/market/get-markets)')
 
 if not tours:
     st.warning('Select at least one series.'); st.stop()
@@ -62,13 +68,13 @@ def dashboard():
         rows, updated_count = overlay_market_data(rows, live_data, last_live)
         if last_live and updated_count:
             lag_seconds = max(0, int(__import__('time').time() - last_live))
-            st.caption(f'Live Kalshi ticker feed · latest tennis message {lag_seconds}s ago · {updated_count} markets updated')
+            st.caption(f'Live feed connected · latest update {lag_seconds}s ago · {updated_count} tennis contracts updated')
         else:
-            st.caption(f'Kalshi WebSocket: {stream_status} · REST baseline refreshes every 60s')
+            st.caption(f'Data connection: {stream_status} · REST market data updates every 60s')
         if stream_status in ('error', 'reconnecting') and stream_error:
-            st.caption('Live connection unavailable; showing REST snapshot while reconnecting.')
+            st.warning('Live feed unavailable. Displaying the latest REST snapshot.')
     else:
-        st.caption('REST updates every 60s. For live Kalshi streaming, add a market-data API key to Streamlit secrets.')
+        st.caption('Data mode: 60-second REST updates · live streaming requires a Kalshi API key in private Streamlit secrets.')
     if errors:
         st.warning('Some requests failed: ' + ' | '.join(errors))
     market_controls = st.container()
@@ -91,7 +97,7 @@ def dashboard():
         st.warning(f'Unable to store local history: {exc}')
     df = pd.DataFrame(rows)
     with market_controls:
-        st.caption(f'Last requested: {started.strftime("%Y-%m-%d %H:%M:%S UTC")} · {len(rows)} open market contracts received · {len(tours)} series queried')
+        st.caption(f'Last checked {started.strftime("%H:%M:%S UTC")} · {len(rows)} open contracts · {len(tours)} tours')
         # Display tournament + matchup to users; ticker IDs remain internal API keys.
         match_rows = df.to_dict('records')
         event_info = cached_event_metadata(tuple(tours))
@@ -154,7 +160,17 @@ def dashboard():
         display_match = labels[chosen_event]
         row = df.set_index('ticker').loc[selected].to_dict()
 
+        st.markdown('##### Selected match at a glance')
+        q1, q2, q3, q4 = st.columns(4)
+        q1.metric('YES bid', f"{row['bid_c']:,.1f}¢" if pd.notna(row['bid_c']) else 'No quote')
+        q2.metric('YES ask', f"{row['ask_c']:,.1f}¢" if pd.notna(row['ask_c']) else 'No quote')
+        q3.metric('Spread', f"{row['spread_c']:,.1f}¢" if pd.notna(row['spread_c']) else 'N/A')
+        q4.metric('Match volume · notional', format_notional_volume(event_volume[chosen_event]))
+        st.caption('Quotes can change. Match volume is an app-computed total of reported contract volumes, not cash paid or a guaranteed match of Kalshi.com.')
+
     with overview:
+        st.subheader('Market overview')
+        st.caption('A quick snapshot of the open tennis contracts currently returned by Kalshi.')
         c1,c2,c3,c4 = st.columns(4)
         c1.metric('Open contracts',len(df))
         c2.metric('With two-sided quotes', int(df['spread_c'].notna().sum()))
@@ -162,8 +178,9 @@ def dashboard():
         c4.metric('24h volume (sum)', f"{df['volume_24h'].sum():,.0f}")
 
     with watchlist:
+        st.subheader('Market watchlist')
         filtered = df.loc[(df['spread_c'].notna()) & (df['spread_c'] <= max_spread) & (df['volume_24h'] >= min_volume)].copy()
-        st.caption('Filters identify liquid, tighter-spread contracts — not necessarily mispricings. Match events may have two separate player contracts; do not add their volumes as unique matches.')
+        st.caption('Compare tradable contracts by spread and recent volume. Filters are in the sidebar. These are market quotes, not trade recommendations.')
         if filtered.empty:
             st.info('No contracts pass your current spread and volume filters.')
         else:
@@ -174,6 +191,8 @@ def dashboard():
             st.download_button('Export watchlist CSV', filtered.to_csv(index=False), file_name='kalshi_tennis_watchlist.csv', mime='text/csv')
 
     with price_history:
+        st.subheader('Price history')
+        st.caption('Tracks quotes observed by this scanner, not a complete exchange archive.')
         k1,k2,k3 = st.columns(3)
         k1.metric('Current YES bid',f"{row['bid_c']}¢" if pd.notna(row['bid_c']) else 'No quote')
         k2.metric('Current YES ask',f"{row['ask_c']}¢" if pd.notna(row['ask_c']) else 'No quote')
@@ -206,7 +225,7 @@ def dashboard():
         st.subheader('Kalshi Market Data Explorer')
         st.caption('Public Kalshi API data for the selected tennis contract. Quotes and trades are exchange data, not an independent tennis prediction. No account access or orders.')
         st.write(f'**Selected match:** {display_match}')
-        st.info('Use the buttons below to request detailed data on demand. This avoids fetching every order book on every dashboard refresh.')
+        st.caption('Advanced data is loaded only when you request it. Start with market details, then order-book depth or recent trades.')
         depth = st.selectbox('Order-book levels per side', [5, 10, 20, 50, 100, 0], index=2,
                              format_func=lambda x: 'All levels' if x == 0 else str(x))
         details_col, book_col, trades_col, candles_col = st.columns(4)
